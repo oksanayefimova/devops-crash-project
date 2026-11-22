@@ -1,0 +1,5 @@
+# Local secrets (use .env.example as a template)
+.env
+
+# OS files
+.DS_Store
