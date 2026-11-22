@@ -170,3 +170,6 @@ workspace.xml
 
 # Visual Studio Code
 /.vscode/
+
+# ESLint cache (regenerated on every build)
+.eslintcache
