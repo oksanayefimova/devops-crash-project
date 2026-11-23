@@ -1,0 +1,61 @@
+# Teach App: MySQL + backend (Spring Boot) + frontend (React on nginx)
+#
+#   cp .env.example .env    # then set real passwords in .env
+#   docker compose up --build
+#
+#   Frontend: http://localhost:3000/dev
+#   Backend:  http://localhost:8080/dev
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: teach-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-teach_db}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # 127.0.0.1 forces TCP, so the check passes only after MySQL has finished
+      # its first-run init (the temporary init server listens on the socket only)
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  backend:
+    build: ./backend
+    container_name: teach-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Inside the compose network the database host is the service name "db",
+      # not localhost, so the URL is built here instead of taken from .env
+      DATASOURCE_URL: jdbc:mysql://db:3306/${MYSQL_DATABASE:-teach_db}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      DATASOURCE_USER: ${DATASOURCE_USER:-root}
+      DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:?set DATASOURCE_PASSWORD in .env}
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The React app runs in the user's browser, so it must call the backend
+        # through the host's published port, not through the service name
+        REACT_APP_ROOT_SERVER: ${REACT_APP_ROOT_SERVER:-http://localhost:8080}
+    container_name: teach-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  mysql-data:
