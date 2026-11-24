@@ -126,5 +126,58 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # The frontend bakes the backend URL in at build time (ignored by backend)
+          build-args: |
+            REACT_APP_ROOT_SERVER=${{ vars.REACT_APP_ROOT_SERVER || 'http://localhost:8080' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: publish
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Prepare image variables
+        id: vars
+        run: |
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAG: ${{ steps.vars.outputs.tag }}
+          IMAGE_REPO: ${{ steps.vars.outputs.repo }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          envs: GHCR_USER,GHCR_TOKEN,IMAGE_TAG,IMAGE_REPO
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/devops-crash-project
+
+            # refresh compose files from the repo
+            git fetch origin main
+            git reset --hard origin/main
+
+            # log in to GHCR (needed if the packages are private)
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+            export IMAGE_TAG IMAGE_REPO
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull backend frontend
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-build --remove-orphans
+
+            docker logout ghcr.io
+            docker image prune -f
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
