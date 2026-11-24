@@ -26,6 +26,7 @@ public class ApplicationConfig {
             HttpServletRequest req = (HttpServletRequest) request;
             if (!req.getRequestURI().startsWith(rootUri + "/static/") &&
                     !req.getRequestURI().startsWith(rootUri + "/api/") &&
+                    !req.getRequestURI().startsWith(rootUri + "/actuator") &&
                     !req.getRequestURI().equals(rootUri + "/")) {
                 RequestDispatcher requestDispatcher = request.getRequestDispatcher( "/");
                 requestDispatcher.forward(request, response);
