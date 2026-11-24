@@ -1,0 +1,5 @@
+services:
+  backend:
+    image: ghcr.io/${IMAGE_REPO}-backend:${IMAGE_TAG:-latest}
+  frontend:
+    image: ghcr.io/${IMAGE_REPO}-frontend:${IMAGE_TAG:-latest}
