@@ -1,0 +1,6 @@
+{
+  "discord_token": "BOT_TOKEN",
+  "github_token": "YOUR_GITHUB_PAT",
+  "repo": "owner/repo",
+  "channel_id": 123456789012345678
+}
