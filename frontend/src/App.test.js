@@ -39,7 +39,7 @@ describe('CategoryService', () => {
 describe('CityService', () => {
     test('getAllCities', async () => {
         await expect(getAllCities()).resolves.toBe(DATA);
-        expect(axios.get).toHaveBeenCalledWith(BASE_URL + '/api/cities');
+        expect(axios.get).toHaveBeenCalledWith(BASE_URL + '/api/city');
     });
 
     test('getCityById', async () => {
