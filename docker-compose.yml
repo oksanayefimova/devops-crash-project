@@ -1,14 +1,15 @@
 # Teach App: MySQL + backend (Spring Boot) + frontend (React on nginx)
-# plus monitoring/logging: Prometheus, Grafana, Loki, Promtail
+# plus monitoring/logging: Prometheus, Alertmanager, Grafana, Loki, Promtail
 #
 #   cp .env.example .env    # then set real passwords in .env
 #   docker compose up --build
 #
-#   Frontend:   http://localhost:3000/dev
-#   Backend:    http://localhost:8080/dev
-#   Grafana:    http://localhost:3001
-#   Prometheus: http://localhost:9090
-#   Loki:       http://localhost:3100
+#   Frontend:     http://localhost:3000/dev
+#   Backend:      http://localhost:8080/dev
+#   Grafana:      http://localhost:3001
+#   Prometheus:   http://localhost:9090
+#   Alertmanager: http://localhost:9093
+#   Loki:         http://localhost:3100
 
 services:
   db:
@@ -66,14 +67,41 @@ services:
     restart: unless-stopped
     depends_on:
       - backend
+      - alertmanager
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      # Directory with alertmanager.yml and (optionally) the discord_webhook file
+      - ./monitoring/alertmanager:/etc/alertmanager-src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        URL="$$DISCORD_WEBHOOK_URL"
+        if [ -z "$$URL" ] && [ -f /etc/alertmanager-src/discord_webhook ]; then
+          URL="$$(cat /etc/alertmanager-src/discord_webhook)"
+        fi
+        if [ -z "$$URL" ]; then
+          echo "ERROR: set DISCORD_WEBHOOK_URL in .env or fill monitoring/alertmanager/discord_webhook" >&2
+          exit 1
+        fi
+        sed "s|webhook_url_file: .*|webhook_url: '$$URL'|" /etc/alertmanager-src/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
 
   loki:
     image: grafana/loki:2.9.8

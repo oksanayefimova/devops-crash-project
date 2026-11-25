@@ -1,0 +1,20 @@
+route:
+  receiver: discord
+  group_by: [alertname, instance]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /etc/alertmanager/discord_webhook
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}🔥 СПРАЦЮВАВ{{ else }}✅ ВІДНОВЛЕНО{{ end }}: {{ .CommonLabels.alertname }}'
+        message: |-
+          {{ range .Alerts }}
+          **Рівень:** {{ .Labels.severity | toUpper }}
+          **Що сталося:** {{ .Annotations.summary }}
+          **Деталі:** {{ .Annotations.description }}
+          **Інстанс:** {{ .Labels.instance }}
+          {{ end }}

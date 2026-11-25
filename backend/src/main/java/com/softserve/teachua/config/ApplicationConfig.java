@@ -13,8 +13,12 @@ import jakarta.servlet.Filter;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.util.Set;
+
 @Configuration
 public class ApplicationConfig {
+
+    private static final Set<String> TEST_STATUS_PATHS = Set.of("/200", "/400", "/409", "/500");
 
     @Value("${server.servlet.context-path}")
     private String rootUri;
@@ -24,10 +28,12 @@ public class ApplicationConfig {
         FilterRegistrationBean<Filter> filterFilterRegistrationBean = new FilterRegistrationBean<>();
         filterFilterRegistrationBean.setFilter((request, response, chain) -> {
             HttpServletRequest req = (HttpServletRequest) request;
-            if (!req.getRequestURI().startsWith(rootUri + "/static/") &&
-                    !req.getRequestURI().startsWith(rootUri + "/api/") &&
-                    !req.getRequestURI().startsWith(rootUri + "/actuator") &&
-                    !req.getRequestURI().equals(rootUri + "/")) {
+            String requestUri = req.getRequestURI();
+            if (!requestUri.startsWith(rootUri + "/static/") &&
+                    !requestUri.startsWith(rootUri + "/api/") &&
+                    !requestUri.startsWith(rootUri + "/actuator") &&
+                    !TEST_STATUS_PATHS.contains(requestUri.substring(rootUri.length())) &&
+                    !requestUri.equals(rootUri + "/")) {
                 RequestDispatcher requestDispatcher = request.getRequestDispatcher( "/");
                 requestDispatcher.forward(request, response);
                 return;
