@@ -1,4 +1,9 @@
 services:
+  db:
+    # On the server MySQL is reached only by the backend over the compose
+    # network (db:3306). Don't publish it on the host: keeps the database
+    # off the network and avoids clashing with anything else on port 3306.
+    ports: !reset []
   backend:
     image: ghcr.io/${IMAGE_REPO}-backend:${IMAGE_TAG:-latest}
   frontend:

@@ -144,7 +144,10 @@ jobs:
       cancel-in-progress: false
     env:
       ENV_FILE: /opt/devops-crash-project/.env
-      COMPOSE_PROJECT_NAME: teach
+      # Same project as the stack already running on the server
+      # (/home/crash/devops-crash-project): deploy updates db/backend/frontend
+      # in place instead of starting a second copy that clashes on ports.
+      COMPOSE_PROJECT_NAME: devops-crash-project
     steps:
       - uses: actions/checkout@v4
 
@@ -162,7 +165,9 @@ jobs:
 
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
           compose pull backend frontend
-          compose up -d --no-build --remove-orphans
+          # No --remove-orphans: monitoring (grafana, prometheus, loki, ...) runs in
+          # the same compose project but isn't in these files, so it must not be removed.
+          compose up -d --no-build
           docker logout ghcr.io
 
           docker image prune -f
