@@ -1,15 +1,19 @@
 # Teach App: MySQL + backend (Spring Boot) + frontend (React on nginx)
+# plus monitoring/logging: Prometheus, Alertmanager, Grafana, Loki, Promtail
 #
 #   cp .env.example .env    # then set real passwords in .env
 #   docker compose up --build
 #
-#   Frontend: http://localhost:3000/dev
-#   Backend:  http://localhost:8080/dev
+#   Frontend:     http://localhost:3000/dev
+#   Backend:      http://localhost:8080/dev
+#   Grafana:      http://localhost:3001
+#   Prometheus:   http://localhost:9090
+#   Alertmanager: http://localhost:9093
+#   Loki:         http://localhost:3100
 
 services:
   db:
     image: mysql:8.0
-    container_name: teach-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
@@ -29,7 +33,6 @@ services:
 
   backend:
     build: ./backend
-    container_name: teach-backend
     restart: unless-stopped
     depends_on:
       db:
@@ -42,6 +45,9 @@ services:
       DATASOURCE_PASSWORD: ${DATASOURCE_PASSWORD:?set DATASOURCE_PASSWORD in .env}
     ports:
       - "8080:8080"
+    volumes:
+      # Shared with Promtail so the application log files can be shipped to Loki
+      - backend-logs:/app/target/logs
 
   frontend:
     build:
@@ -50,12 +56,96 @@ services:
         # The React app runs in the user's browser, so it must call the backend
         # through the host's published port, not through the service name
         REACT_APP_ROOT_SERVER: ${REACT_APP_ROOT_SERVER:-http://localhost:8080}
-    container_name: teach-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "3000:80"
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - alertmanager
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    environment:
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      # Directory with alertmanager.yml and (optionally) the discord_webhook file
+      - ./monitoring/alertmanager:/etc/alertmanager-src:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        URL="$$DISCORD_WEBHOOK_URL"
+        if [ -z "$$URL" ] && [ -f /etc/alertmanager-src/discord_webhook ]; then
+          URL="$$(cat /etc/alertmanager-src/discord_webhook)"
+        fi
+        if [ -z "$$URL" ]; then
+          echo "ERROR: set DISCORD_WEBHOOK_URL in .env or fill monitoring/alertmanager/discord_webhook" >&2
+          exit 1
+        fi
+        sed "s|webhook_url_file: .*|webhook_url: '$$URL'|" /etc/alertmanager-src/alertmanager.yml > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+    ports:
+      - "9093:9093"
+
+  loki:
+    image: grafana/loki:2.9.8
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    command:
+      - -config.file=/etc/loki/loki-config.yml
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+
+  promtail:
+    image: grafana/promtail:2.9.8
+    restart: unless-stopped
+    depends_on:
+      - loki
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      # Same volume as backend /app/target/logs, mounted read-only
+      - backend-logs:/var/log/teachua:ro
+    command:
+      - -config.file=/etc/promtail/promtail-config.yml
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+
 volumes:
   mysql-data:
+  backend-logs:
+  prometheus-data:
+  grafana-data:
+  loki-data:

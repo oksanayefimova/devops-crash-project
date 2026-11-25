@@ -1,0 +1,36 @@
+groups:
+  - name: app
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Ціль {{ $labels.job }} ({{ $labels.instance }}) недоступна"
+          description: "Prometheus не може зібрати метрики з {{ $labels.instance }} уже більше хвилини. Перевірте стан контейнера: docker compose ps, і логи: docker compose logs {{ $labels.job }}."
+
+      - alert: High5xxRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[1m]))
+          / sum(rate(http_server_requests_seconds_count[1m])) > 0.05
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Частка 5xx вища за 5% ({{ $value | humanizePercentage }})"
+          description: "Понад 5% запитів до бекенда завершуються помилкою сервера (5xx) протягом хвилини. Перегляньте логи бекенда й панель з кодами відповідей у Grafana."
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le)(rate(http_server_requests_seconds_bucket[1m]))) > 1
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 затримки вища за 1с ({{ $value | humanizeDuration }})"
+          description: "95% запитів обробляються довше за 1 секунду вже понад 2 хвилини. Можливі причини: навантаження, повільні запити до MySQL, нестача ресурсів контейнера."
+      - alert: TargetRecovered
+        expr: up == 1 and min_over_time(up[5m]) == 0
+        labels: { severity: info }
+        annotations:
+          summary: "Ціль {{ $labels.job }} ({{ $labels.instance }}) знову доступна"
+          description: "Prometheus знову збирає метрики з {{ $labels.instance }}, до цього за останні 5 хвилин ціль була недоступна."
